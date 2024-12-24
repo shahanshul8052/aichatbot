@@ -12,8 +12,8 @@ def fetch_fpl_data():
     # Parse JSON response
     data = response.json()
 
-    # Extract relevant sections
-    players = data["elements"]  # Player stats
+    # Extract important areas 
+    players = data["elements"]  # Player statistics
     teams = data["teams"]       # Team strengths
     fixtures = data["events"]   # Fixture schedules
 

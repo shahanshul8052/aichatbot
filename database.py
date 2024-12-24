@@ -5,7 +5,10 @@ def setup_database():
     conn = sqlite3.connect("fpl_data.db")
     cursor = conn.cursor()
 
-    # Create Players table
+
+    # 1: GK, 2: DEF, 3: MID, 4: FWD
+
+    # Create table for players
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS Players (
         id INTEGER PRIMARY KEY,
@@ -18,7 +21,7 @@ def setup_database():
     )
     """)
 
-    # Create Teams table
+    # Create table for teams
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS Teams (
         id INTEGER PRIMARY KEY,
@@ -28,7 +31,7 @@ def setup_database():
     )
     """)
 
-    # Create Fixtures table
+    # Create table for fixtures
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS Fixtures (
         gameweek INTEGER PRIMARY KEY,
