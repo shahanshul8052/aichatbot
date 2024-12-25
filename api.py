@@ -185,9 +185,64 @@ def get_team_fixtures(team_name):
 
     return jsonify(team_fixtures)
 
+
+# player reccomendation endpoint
+@app.route("/recommendations", methods=["GET"])
+def get_recs():
+    """
+    Get player recommendations based on form and points.
+    """
+    # query players from  database
+    players = query_db("SELECT * FROM Players")
+    if not players:
+        # 404 error if no players found
+        return jsonify({"error": "No players found"}), 404
+    
+    # reccomendation threshold
+    buy_criteria = {
+        "form": 4.0,
+        "cost": 8.0 
+        # high form and low cost
+    }
+    sell_criteria = {
+        "form": 2.9,
+        "cost": 8.0
+        # low form and high cost
+    }
+
+    # reccomendation lists
+    recommedations  = {
+        "buy": [],
+        "sell": [], 
+        "hold": []
+    }
+
+    # logic 
+    for player in players:
+        player_data = dict(player)
+        form = player_data["form"]
+        cost = player_data["cost"]
+        points = player_data["points"]
+
+        # buy logic
+        if form >= buy_criteria["form"] and cost <= buy_criteria["cost"]:
+            recommedations["buy"].append(player_data)
+        # sell logic
+        elif form <= sell_criteria["form"] and cost >= sell_criteria["cost"]:
+            recommedations["sell"].append(player_data)
+        # hold logic
+        else:
+            recommedations["hold"].append(player_data)
+
+    return jsonify(recommedations)
+
+# FUTURE ENHANCEMENT - FIXTURED BASED LOGIC FOR RECS
+
+
+
+
+
 # start the Flask app
-
-
 
 if __name__ == "__main__":
     app.run(debug=True)
