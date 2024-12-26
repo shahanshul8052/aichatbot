@@ -23,8 +23,6 @@ def chatbot():
         return jsonify(get_pos_players("FWD", min_budget, max_budget))
     elif "midfielders" in user_input:
         min_budget, max_budget = extract_budget(user_input)
-        print(f"User input: {user_input}")  # Debugging: Original input
-        print(f"Extracted min_budget: {min_budget}, max_budget: {max_budget}")  # Debugging
         return jsonify(get_pos_players("MID", min_budget, max_budget))
     elif "defenders" in user_input:
         min_budget, max_budget = extract_budget(user_input)
@@ -58,15 +56,10 @@ def get_pos_players(position, min_budget=None, max_budget=None):
     if max_budget is not None:
         params["max_budget"] = max_budget
 
-    # Debugging: Print the API parameters
-    print("Params sent to API:", params)
-
     # Send the GET request to the API
     response = requests.get(f"{API_BASE_URL}/players", params=params)
 
-    # Debugging: Log the API response
-    print("API response status code:", response.status_code)
-    print("API response:", response.json())
+    
 
     # Check the response and return formatted results
     if response.status_code == 200:
@@ -109,10 +102,9 @@ def extract_budget(message):
                 budget = words[i + 1].rstrip(string.punctuation)
                 min_budget = float(budget)
         except ValueError:
-            print(f"Error parsing budget value: {words[i + 1]}")  # Debugging
+            print(f"Error parsing budget value: {words[i + 1]}")  
 
-    # Debugging: Print the extracted values
-    print(f"Extracted min_budget: {min_budget}, max_budget: {max_budget}")
+   
     return min_budget, max_budget
 
 
@@ -176,8 +168,6 @@ def get_player_recommendation(player_name):
         # Normalize the player name for matching
         player_name_normalized = player_name.lower().replace(".", "").strip()
 
-        # Debugging: Print player_name_normalized
-        print(f"Normalized input name: {player_name_normalized}")
 
         # Search for the player in the buy, sell, and hold lists
         for category, players in recommendations.items():
@@ -185,8 +175,6 @@ def get_player_recommendation(player_name):
                 # Normalize the player's name in the database
                 player_name_in_db = player["name"].lower().replace(".", "").strip()
                 
-                # Debugging: Print normalized database name
-                print(f"Checking against database name: {player_name_in_db}")
                 
                 if player_name_normalized in player_name_in_db:
                     if category == "buy":
