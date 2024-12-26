@@ -1,5 +1,7 @@
+import sqlite3
 from flask import Flask, request, jsonify
 import requests
+import string
 
 app = Flask(__name__)
 
@@ -17,17 +19,19 @@ def chatbot():
 
     # Basic intent matching
     if "forwards" in user_input:
-        budget = extract_budget(user_input)
-        return jsonify(get_pos_players("FWD", budget))
+        min_budget, max_budget = extract_budget(user_input)
+        return jsonify(get_pos_players("FWD", min_budget, max_budget))
     elif "midfielders" in user_input:
-        budget = extract_budget(user_input)
-        return jsonify(get_pos_players("MID", budget))
+        min_budget, max_budget = extract_budget(user_input)
+        print(f"User input: {user_input}")  # Debugging: Original input
+        print(f"Extracted min_budget: {min_budget}, max_budget: {max_budget}")  # Debugging
+        return jsonify(get_pos_players("MID", min_budget, max_budget))
     elif "defenders" in user_input:
-        budget = extract_budget(user_input)
-        return jsonify(get_pos_players("DEF", budget))
+        min_budget, max_budget = extract_budget(user_input)
+        return jsonify(get_pos_players("DEF", min_budget, max_budget))
     elif "goalkeepers" in user_input:
-        budget = extract_budget(user_input)
-        return jsonify(get_pos_players("GK", budget))
+        min_budget, max_budget = extract_budget(user_input)
+        return jsonify(get_pos_players("GK", min_budget, max_budget))
     elif "fixtures" in user_input or "upcoming games" in user_input:
         team_name = extract_team_name(user_input)
         if team_name:
@@ -43,29 +47,94 @@ def chatbot():
     else:
         return jsonify({"message": "I'm sorry, I don't understand that. Please try asking about players, fixtures, or teams."})
 
+def get_pos_players(position, min_budget=None, max_budget=None):
+    """
+    Fetch players based on position and budget range.
+    """
+    # Prepare the query parameters
+    params = {"position": position}
+    if min_budget is not None:
+        params["min_budget"] = min_budget
+    if max_budget is not None:
+        params["max_budget"] = max_budget
+
+    # Debugging: Print the API parameters
+    print("Params sent to API:", params)
+
+    # Send the GET request to the API
+    response = requests.get(f"{API_BASE_URL}/players", params=params)
+
+    # Debugging: Log the API response
+    print("API response status code:", response.status_code)
+    print("API response:", response.json())
+
+    # Check the response and return formatted results
+    if response.status_code == 200:
+        players = response.json()
+        if not players:
+            # Create a budget message for the response
+            budget_msg = ""
+            if min_budget is not None and max_budget is not None:
+                budget_msg = f"between £{min_budget} and £{max_budget}"
+            elif min_budget is not None:
+                budget_msg = f"over £{min_budget}"
+            elif max_budget is not None:
+                budget_msg = f"under £{max_budget}"
+            return {"message": f"No {position} players found {budget_msg}."}
+        return {"players": players}
+
+    # Return an error message if the API call fails
+    return {"message": "Error fetching player data."}
+
 
 def extract_budget(message):
     """
-    Extract budget from the user input if mentioned.
-    Looks for keywords like 'under', 'below', or 'less' followed by a number.
+    Extract budget range from the user input if mentioned.
+    Handles phrases like 'under', 'below', 'over', 'above', 'less', and 'more'.
     """
     words = message.split()
-    for i, word in enumerate(words):
-        if word in ["under", "below", "less"] and i + 1 < len(words):
-            try:
-                return float(words[i + 1])
-            except ValueError:
-                continue
-    return None  # No budget found
+    min_budget = None
+    max_budget = None
 
+    for i, word in enumerate(words):
+        try:
+            # Handle max budget (e.g., "under 10")
+            if word in ["under", "below", "less"] and i + 1 < len(words):
+                # Strip any trailing punctuation from the next word
+                budget = words[i + 1].rstrip(string.punctuation)
+                max_budget = float(budget)
+            # Handle min budget (e.g., "over 8")
+            elif word in ["over", "above", "more"] and i + 1 < len(words):
+                # Strip any trailing punctuation from the next word
+                budget = words[i + 1].rstrip(string.punctuation)
+                min_budget = float(budget)
+        except ValueError:
+            print(f"Error parsing budget value: {words[i + 1]}")  # Debugging
+
+    # Debugging: Print the extracted values
+    print(f"Extracted min_budget: {min_budget}, max_budget: {max_budget}")
+    return min_budget, max_budget
+
+
+def fetch_team_names():
+    """
+    Fetch the list of team names dynamically from the database.
+    """
+    conn = sqlite3.connect("fpl_data.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM Teams")
+    teams = [row[0].lower() for row in cursor.fetchall()]
+    conn.close()
+    return teams
 
 def extract_team_name(message):
     """
     Extract a team's name from the user input.
     """
-    teams = ["liverpool", "man city", "chelsea", "arsenal", "spurs", "man united"]  # Expand this list
+    # Dynamically fetch team names
+    teams = fetch_team_names()
     for team in teams:
-        if team in message:
+        if team in message.lower():
             return team.capitalize()
     return None
 
@@ -73,29 +142,16 @@ def extract_team_name(message):
 def extract_player_name(message):
     """
     Extract the player's name from the user input.
+    handle punctuation and capitalization variations.
     """
-    words = message.split()
+
+    clean_word = message.translate(str.maketrans("", "", string.punctuation)).lower()
+
+    words = clean_word.split()
     for i, word in enumerate(words):
         if word in ["buy", "sell", "hold"] and i + 1 < len(words):
-            return " ".join(words[i + 1:])  # Assume the player's name follows
-    return None
-
-
-def get_pos_players(position, budget):
-    """
-    Fetch players based on position and budget.
-    """
-    params = {"position": position}
-    if budget:
-        params["budget"] = budget
-
-    response = requests.get(f"{API_BASE_URL}/players", params=params)
-    if response.status_code == 200:
-        players = response.json()
-        if not players:
-            return {"message": f"No {position} players found under £{budget}."}
-        return {"players": players}
-    return {"message": "Error fetching player data."}
+            return " ".join(words[i + 1:]).strip()
+    return None  # No player name found
 
 
 def get_team_fixtures(team_name):

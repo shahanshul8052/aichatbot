@@ -31,8 +31,8 @@ def get_players():
     Get all players with optional filters for position, budget, and name.
     Query Params:
       - position: GK, DEF, MID, FWD (e.g., position=GK)
-      - budget: Maximum cost (e.g., budget=8.0)
-      - name: Part or full player name (e.g., name=Salah)
+      - min_budget: Minimum cost (e.g., min_budget=8.0)
+      - max_budget: Maximum cost (e.g., max_budget=10.0)
     """
     # Mapping for player positions
     position_mapping = {
@@ -44,32 +44,31 @@ def get_players():
 
     # Extract query parameters
     position = request.args.get("position")
-    budget = request.args.get("budget")
-    name = request.args.get("name")
+    min_budget = request.args.get("min_budget", type=float)
+    max_budget = request.args.get("max_budget", type=float)
 
-    query = "SELECT * FROM Players"
-    args = []
+    # Ensure position is mapped correctly
+    if position and position.upper() in position_mapping:
+        position = position_mapping[position.upper()]
+    else:
+        return jsonify({"error": "Invalid or missing position parameter"}), 400
 
-    # Add filters if query parameters are provided
-    if position or budget or name:
-        query += " WHERE"
-        if position:
-            query += " position = ?"
-            args.append(position_mapping.get(position.upper(), ""))
-        if budget:
-            if args:
-                query += " AND"
-            query += " cost <= ?"
-            args.append(float(budget))
-        if name:
-            if args:
-                query += " AND"
-            query += " name LIKE ?"
-            args.append(f"%{name}%")
+    # Build the SQL query
+    query = "SELECT * FROM Players WHERE position = ?"
+    args = [position]
 
-    # Query the database
+    if min_budget is not None:
+        query += " AND cost >= ?"
+        args.append(min_budget)
+    if max_budget is not None:
+        query += " AND cost <= ?"
+        args.append(max_budget)
+
+    # Execute the query and fetch results
     players = query_db(query, args)
+
     return jsonify([dict(player) for player in players])
+
 
 @app.route("/players/<int:player_id>", methods=["GET"])
 def get_player(player_id):
