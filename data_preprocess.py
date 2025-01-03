@@ -1,12 +1,7 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-
-# resylts right now
-# x_train shape: (21310 samples (rows, 5 features (columns))
-# x_test shape: (5328 samples (rows), 5 features (columns))
-# y_train shape: (21310 samples (rows), 1 feature (column))
-# y_test shape: (5328 samples (rows), 1 feature (column))
+import numpy as np
 
 def preprocess_data(file_path):
     """
@@ -35,6 +30,12 @@ def preprocess_data(file_path):
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
+
+    # Save the preprocessed data
+    np.save("X_train.npy", X_train_scaled)
+    np.save("X_test.npy", X_test_scaled)
+    np.save("y_train.npy", y_train.to_numpy())
+    np.save("y_test.npy", y_test.to_numpy())
 
     return X_train_scaled, X_test_scaled, y_train, y_test
 
