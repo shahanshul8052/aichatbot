@@ -2,11 +2,33 @@ import sqlite3
 from flask import Flask, request, jsonify
 import requests
 import string
+import pandas as pd
+import numpy as np
+import pickle
+import joblib
+from fuzzywuzzy import process
 
 app = Flask(__name__)
 
 # Base URL for the main API
 API_BASE_URL = "http://127.0.0.1:5000"
+# Load the trained model and dataset
+MODEL_PATH = "trained_model.pkl"
+DATA_PATH = "training_data.csv"
+
+try:
+    model = joblib.load("trained_model.pkl")
+    print("Model loaded successfully!")
+except Exception as e:
+    print(f"Error loading model: {e}")
+
+try:
+    data = pd.read_csv(DATA_PATH)
+    print("Data loaded successfully.")
+except Exception as e:
+    print(f"Error loading data: {e}")
+
+    
 
 @app.route("/chat", methods=["POST"])
 def chatbot():
@@ -18,7 +40,13 @@ def chatbot():
     user_input = request.json.get("message", "").lower()
 
     # Basic intent matching
-    if "forwards" in user_input:
+    if "predict points" in user_input:
+        player_name = extract_player_name_prediction(user_input)
+        gameweek = extract_gameweek(user_input)
+        if player_name and gameweek:
+            return jsonify(predict_player_points(player_name, gameweek))
+        return jsonify({"message": "Please provide both a valid player name and gameweek for prediction."})
+    elif "forwards" in user_input:
         min_budget, max_budget = extract_budget(user_input)
         return jsonify(get_pos_players("FWD", min_budget, max_budget))
     elif "midfielders" in user_input:
@@ -36,7 +64,7 @@ def chatbot():
             return jsonify(get_team_fixtures(team_name))
         return jsonify({"message": "Please specify a team for fixture analysis (e.g., 'What are Liverpool's next fixtures?')."})
     elif "buy" in user_input or "sell" in user_input or "hold" in user_input:
-        player_name = extract_player_name(user_input)
+        player_name = extract_player_name_transfer(user_input)
         if player_name:
             return jsonify(get_player_recommendation(player_name))
         return jsonify({"message": "Please specify a player for recommendations (e.g., 'Should I buy Salah?')."})
@@ -44,6 +72,154 @@ def chatbot():
         return jsonify(get_teams())
     else:
         return jsonify({"message": "I'm sorry, I don't understand that. Please try asking about players, fixtures, or teams."})
+    
+@app.route("/predicted-points", methods=["POST"])
+def get_predicted_points():
+    """
+    Fetch predicted points for a specific player from fplform.com.
+    """
+    player_name = extract_player_name_prediction(request.json.get("message", ""))
+    if not player_name:
+        return jsonify({"message": "Please provide a valid player name."})
+
+    try:
+        # Load the predicted points
+        df = pd.read_csv("predicted_points.csv")
+
+        # Match player name
+        player_row = df[df["Player"].str.lower() == player_name.lower()]
+        if not player_row.empty:
+            predicted_points = player_row["Predicted Points"].values[0]
+            return jsonify({
+                "message": f"{player_name.capitalize()} is expected to score approximately {predicted_points} points."
+            })
+        else:
+            return jsonify({"message": f"No predicted points data found for {player_name.capitalize()}."})
+
+    except Exception as e:
+        return jsonify({"message": f"Error fetching predicted points: {str(e)}"})
+
+def extract_gameweek(message):
+    """
+    Extract gameweek number from the user input.
+    """
+    words = message.lower().split()
+    for i, word in enumerate(words):
+        if word.lower() == "gameweek" and i + 1 < len(words):
+            try:
+                return int(words[i + 1].strip(string.punctuation))
+            except ValueError:
+                continue
+    return None
+
+
+def parse_query(user_input):
+    """
+    Parse the user input to extract player name and gameweek.
+    """
+    words = user_input.split()
+    player_name = None
+    gameweek = None
+
+    for i, word in enumerate(words):
+        if word == "gameweek" and i + 1 < len(words):
+            try:
+                gameweek = int(words[i + 1])
+            except ValueError:
+                continue
+        elif word == "for" and i + 1 < len(words):
+            player_name = words[i + 1].capitalize()
+
+    return player_name, gameweek
+
+
+def predict_points(player_name, gameweek):
+    """
+    Predict the next gameweek points for a player.
+    """
+    # Filter data for the given player and gameweek
+    player_data = data[(data["player_name"].str.lower() == player_name.lower()) & (data["gameweek"] == gameweek)]
+
+    if player_data.empty:
+        return f"Data for {player_name} in Gameweek {gameweek} is not available."
+
+    # Extract features for the prediction
+    features = player_data[["recent_form", "team_strength_home", "team_strength_away", "fixture_difficulty", "gameweek"]].values
+
+    # Make prediction using the trained model
+    predicted_points = model.predict(features)
+
+    return f"{player_name} is expected to score approximately {predicted_points[0]:.2f} points in Gameweek {gameweek}."
+
+def match_player_name(player_name, available_names):
+    """
+    Match a player's name from the available names in the CSV.
+    Uses fuzzy matching to allow partial matches.
+    """
+    best_match, score = process.extractOne(player_name, available_names)
+    if score > 70:  # Threshold for a valid match
+        return best_match
+    return None
+
+def predict_player_points(player_name, gameweek):
+    """
+    Fetch predicted points for a specific player and gameweek from the scraped data.
+    """
+    try:
+        # Load the predicted points
+        df = pd.read_csv("predicted_points.csv")
+
+        # Get all available player names
+        available_names = df["Player"].tolist()
+
+        # Match user input to available player names
+        matched_name = match_player_name(player_name, available_names)
+
+        if not matched_name:
+            return {"message": f"No predicted points data found for {player_name.capitalize()}."}
+
+        # Match player name and gameweek
+        player_row = df[(df["Player"].str.lower() == matched_name.lower()) & (df["GW"] == gameweek)]
+        if not player_row.empty:
+            predicted_points = player_row["Predicted Points"].values[0]
+            return {"message": f"{matched_name} is expected to score approximately {predicted_points} points in Gameweek {gameweek}."}
+        else:
+            return {"message": f"No predicted points data found for {player_name.capitalize()} in Gameweek {gameweek}."}
+
+    except Exception as e:
+        return {"message": f"Error fetching predicted points: {str(e)}"}
+
+
+
+def get_current_gameweek():
+    """
+    Fetch the current gameweek dynamically from the official FPL API.
+    """
+    try:
+        # Official FPL API URL
+        url = "https://fantasy.premierleague.com/api/bootstrap-static/"
+        response = requests.get(url)
+
+        if response.status_code != 200:
+            print("Failed to fetch data from the FPL API.")
+            return None
+
+        # Parse the JSON response
+        data = response.json()
+
+        # Find the current gameweek (is_current = True)
+        for event in data["events"]:
+            if event["is_current"]:
+                return event["id"]
+
+        # Fallback if no current gameweek is found
+        print("No current gameweek found in the FPL data.")
+        return None
+
+    except Exception as e:
+        print(f"Error fetching current gameweek: {str(e)}")
+        return None
+    
 
 def get_pos_players(position, min_budget=None, max_budget=None):
     """
@@ -131,19 +307,63 @@ def extract_team_name(message):
     return None
 
 
-def extract_player_name(message):
+def extract_player_name_transfer(message):
     """
-    Extract the player's name from the user input.
-    handle punctuation and capitalization variations.
+    Extract the player's name from transfer-related queries like "Should I buy Salah?"
     """
+    # Remove punctuation and convert to lowercase
+    clean_message = message.translate(str.maketrans("", "", string.punctuation)).lower()
 
-    clean_word = message.translate(str.maketrans("", "", string.punctuation)).lower()
+    # Identify keywords before the player name
+    keywords = ["buy", "sell", "hold", "recommend"]
 
-    words = clean_word.split()
+    words = clean_message.split()
     for i, word in enumerate(words):
-        if word in ["buy", "sell", "hold"] and i + 1 < len(words):
-            return " ".join(words[i + 1:]).strip()
+        if word in keywords and i + 1 < len(words):
+            # Return the word(s) following the keyword as the player's name
+            return " ".join(words[i + 1:]).capitalize()
     return None  # No player name found
+
+
+def extract_player_name_prediction(message):
+    """
+    Extract the player's name from prediction-related queries like "Predict points for Saka in Gameweek 18."
+    """
+    # Remove punctuation and convert to lowercase
+    clean_message = message.translate(str.maketrans("", "", string.punctuation)).lower()
+
+    words = clean_message.split()
+    for i, word in enumerate(words):
+        if word == "for" and i + 1 < len(words):
+            player_name_parts = []
+            for j in range(i + 1, len(words)):
+                if words[j] in ["in", "gameweek", "gw"]:  # Stop at boundary terms
+                    break
+                player_name_parts.append(words[j])
+            if player_name_parts:
+                return " ".join(player_name_parts).capitalize()
+    return None  # No player name found
+
+
+# def extract_player_name(message):
+#     """
+#     Extract the player's name from the user input.
+#     Handles queries like "Should I buy Salah?"
+#     """
+#     # Remove punctuation and convert to lowercase
+#     clean_message = message.translate(str.maketrans("", "", string.punctuation)).lower()
+
+#     # Identify keywords before the player name
+#     keywords = ["buy", "sell", "hold", "recommend"]
+
+#     words = clean_message.split()
+#     for i, word in enumerate(words):
+#         if word in keywords and i + 1 < len(words):
+#             # Return the word(s) following the keyword as the player's name
+#             return " ".join(words[i + 1:]).capitalize()
+#     return None  # No player name found
+
+
 
 
 def get_team_fixtures(team_name):

@@ -27,10 +27,14 @@ def train_model():
     # how far predictions are from actual values on average 
     # lower the better
 
-    print(f"Mean Absolute Error (MAE): {mean_absolute_error(y_test, y_pred):.2f}")
-    # 
-    print(f"Mean Squared Error (MSE): {mean_squared_error(y_test, y_pred):.2f}")
-    print(f"R-squared (R²): {r2_score(y_test, y_pred):.2f}")
+    mae = mean_absolute_error(y_test, y_pred)
+    mse = mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+
+    print("Evaluation Metrics:")
+    print(f"Mean Absolute Error (MAE): {mae:.2f}")
+    print(f"Mean Squared Error (MSE): {mse:.2f}")
+    print(f"R-squared (R²): {r2:.2f}")
 
     # Step 4: Save the trained model
     joblib.dump(model, "trained_model.pkl")
