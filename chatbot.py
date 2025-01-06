@@ -28,7 +28,70 @@ try:
 except Exception as e:
     print(f"Error loading data: {e}")
 
-    
+
+@app.route("/captain-recommendation", methods=["POST"])
+def recommend_captain():
+    """
+    Recommend the best captain for the next or specified gameweek.
+    """
+    user_input = request.json.get("message", "").lower()
+    requested_gameweek = extract_gameweek(user_input)
+
+    # Load predicted points data
+    try:
+        df = pd.read_csv("predicted_points.csv")
+        print(f"Data loaded successfully.")
+        print(f"Available gameweeks in CSV: {df['GW'].unique()}")
+
+        # Determine the gameweek to use
+        valid_gameweeks = sorted(df["GW"].unique())
+        current_gameweek = get_current_gameweek()
+        next_gameweek = min([gw for gw in valid_gameweeks if gw >= current_gameweek], default=None)
+
+        # If the requested gameweek is not specified or invalid, use the next available gameweek
+        if not requested_gameweek or requested_gameweek < current_gameweek or requested_gameweek not in valid_gameweeks:
+            if requested_gameweek and requested_gameweek < current_gameweek:
+                return jsonify({"message": f"Gameweek {requested_gameweek} has already passed. Try asking for a future gameweek."})
+            if not next_gameweek:
+                return jsonify({"message": "No future gameweek data available for captain recommendations."})
+            requested_gameweek = next_gameweek
+
+        print(f"Using Gameweek: {requested_gameweek}")
+
+        # Filter data for the selected gameweek
+        gw_data = df[df["GW"] == requested_gameweek]
+
+        if gw_data.empty:
+            return jsonify({"message": f"No data available for Gameweek {requested_gameweek}."})
+
+        # Prioritize players by position (MID > FWD > DEF > GK)
+        position_priority = {"FWD": 2, "MID": 1, "DEF": 3, "GK": 4}
+        gw_data["Position Priority"] = gw_data["Position"].map(position_priority)
+
+        # Sort by predicted points and position priority
+        gw_data = gw_data.sort_values(by=["Predicted Points", "Position Priority"], ascending=[False, True])
+
+        # Recommend top 3 players
+        top_captains = gw_data.head(3)[["Player", "Team", "Predicted Points", "Position"]]
+
+        recommendations = [
+            {
+                "Player": row["Player"],
+                "Team": row["Team"],
+                "Predicted Points": row["Predicted Points"],
+                "Position": row["Position"]
+            }
+            for _, row in top_captains.iterrows()
+        ]
+
+        return jsonify({
+            "message": f"Here are the top captaincy options for Gameweek {requested_gameweek}:",
+            "recommendations": recommendations
+        })
+
+    except Exception as e:
+        return jsonify({"message": f"Error recommending captain: {str(e)}"})
+
 
 @app.route("/chat", methods=["POST"])
 def chatbot():

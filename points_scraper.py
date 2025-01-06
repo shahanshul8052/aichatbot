@@ -78,31 +78,35 @@ def scrape_predicted_points():
 
     # Get the current gameweek
     current_gameweek = get_current_gameweek()
+    print(f"Current Gameweek: {current_gameweek}")
 
-    # Extract player name and predicted points for the next 6 gameweeks
+    # Extract player name, team, position, and predicted points for the next 6 gameweeks
     predicted_points_data = []
     for _, row in df.iterrows():
         player_name = row["Player"]
-        for i, gw_offset in enumerate(gw_offsets):
+        player_team = row["Team"]
+        player_position = row["PosPosition"]
+        for i, gw_offset in enumerate(gw_offsets):  # Iterate through GW offsets
             gw_col = prob_col_index + gw_offset
-            gw_number = current_gameweek + i
+            gw_number = current_gameweek + i  # Dynamic gameweek calculation
             if gw_col < len(row):
                 predicted_points = row.iloc[gw_col]
                 if predicted_points:  # Avoid empty or invalid data
                     predicted_points_data.append({
                         "Player": player_name,
+                        "Team": player_team,
+                        "Position": player_position,
                         "GW": gw_number,
                         "Predicted Points": float(predicted_points) if predicted_points.replace('.', '', 1).isdigit() else 0.0
                     })
-
-    print(f"Scraped data for {len(predicted_points_data)} rows. Creating final DataFrame...")
 
     # Convert to a final DataFrame
     final_df = pd.DataFrame(predicted_points_data)
 
     # Save the final data to a CSV
     final_df.to_csv("predicted_points.csv", index=False)
-    print("Predicted points data saved successfully as 'predicted_points.csv'!")
+    print("Predicted points data saved successfully!")
+
 
 
 if __name__ == "__main__":
